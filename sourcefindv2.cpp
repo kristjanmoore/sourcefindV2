@@ -330,17 +330,8 @@ void sourcefind(const std::vector<double> &target_vec,
 
   for (int m = 1; m <= num_runs; ++m) {
     auto unique_vals = unique_vector(surr_tochoose);
-    std::vector<int> unique_counts(unique_vals.size(), 0);
-    for (int val : surr_tochoose) {
-      auto it = std::lower_bound(unique_vals.begin(), unique_vals.end(), val);
-      if (it != unique_vals.end() && *it == val) {
-        ++unique_counts[std::distance(unique_vals.begin(), it)];
-      }
-    }
-    std::vector<double> replace_probs(unique_vals.size());
-    for (std::size_t i = 0; i < unique_counts.size(); ++i) {
-      replace_probs[i] = static_cast<double>(unique_counts[i]) / static_cast<double>(num_slots);
-    }
+    std::vector<double> replace_probs(unique_vals.size(),
+                                      1.0 / static_cast<double>(num_slots));
     std::vector<int> pops_to_replace_vec(pops_to_replace);
     for (int i = 0; i < pops_to_replace; ++i) {
       pops_to_replace_vec[i] = sample_one_with_prob(rng, unique_vals, replace_probs);
@@ -781,14 +772,13 @@ int main(int argc, char **argv) {
   std::random_device rd;
   std::mt19937_64 rng(rd());
 
-  std::vector<std::string> surr_pops = donor_pops_all2;
-
   for (std::size_t i = 0; i < params.target_popnames.size(); ++i) {
     std::cout << "Analysing target " << (i + 1) << " of " << params.target_popnames.size()
               << " -- " << params.target_popnames[i] << "....." << std::endl;
     std::vector<double> target_vec = recipient_mat[i];
     std::vector<std::vector<double>> surr_mat = predmat;
     std::vector<std::string> row_names = donor_pops_all2;
+    std::vector<std::string> surr_pops = donor_pops_all2;
 
     std::vector<int> row_indices;
     for (std::size_t r = 0; r < donor_pops_all2.size(); ++r) {
@@ -831,6 +821,7 @@ int main(int argc, char **argv) {
       } else {
         surr_mat.push_back(self_copy_vec);
         row_names.push_back(params.target_popnames[i]);
+        surr_pops.push_back(params.target_popnames[i]);
       }
     }
 

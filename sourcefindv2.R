@@ -89,12 +89,15 @@ error.input.message <- function(file.name) {
 }
 
 line.check <- function(file.name, skip.val, match.val) {
-  if (as.character(read.table(file.name, skip = skip.val, nrows = 1, as.is = TRUE)[1]) != as.character(match.val)) {
+  line.data <- read.table(file.name, skip = skip.val, nrows = 1, as.is = TRUE, check.names = FALSE)
+  first.val <- as.character(line.data[1, 1])
+  if (first.val != as.character(match.val)) {
     error.input.message(file.name)
   }
-  if (as.character(read.table(file.name, skip = skip.val, nrows = 1, as.is = TRUE)[1]) == as.character(match.val)) {
-    return(read.table(file.name, skip = skip.val, nrows = 1, as.is = TRUE)[2:length(read.table(file.name, skip = skip.val, nrows = 1, as.is = TRUE))])
+  if (ncol(line.data) == 1) {
+    return(vector(mode = "character", length = 0))
   }
+  return(unlist(line.data[1, -1, drop = FALSE], use.names = FALSE))
 }
 
 ## line read in and checks:
@@ -209,7 +212,7 @@ sourcefind <- function(target.vec, surr.mat, num.pops, surr.exp, num.slots, num.
 
   surr.tochoose.orig <- as.integer(sample(as.character(1:num.surr), num.pops, replace = T))
   surr.tochoose <- as.integer(sample(as.character(surr.tochoose.orig), num.slots, replace = T))
-  prev.multinom <- multi.prob.func(apply((1.0 / num.slots) * matrix(surr.mat[surr.tochoose, ], ncol = dim(surr.mat)[2]), 2, sum), target.vec)
+  prev.multinom <- multi.prob.func(colMeans(surr.mat[surr.tochoose, , drop = FALSE]), target.vec)
   if (add.prior == "yes") prev.multinom <- prev.multinom + log(prior.prob.vec[length(unique(surr.tochoose))])
   surr.tochoose.prev <- surr.tochoose
   surr.tochoose.final <- multi.prob.final <- NULL
@@ -238,7 +241,7 @@ sourcefind <- function(target.vec, surr.mat, num.pops, surr.exp, num.slots, num.
       surr.tochoose[slots.to.replace] <- rep(as.integer(sample(as.character(other.surr), 1)), length(slots.to.replace))
     }
     ## calculate new prob, and accept if better:
-    new.multinom <- multi.prob.func(apply((1.0 / num.slots) * matrix(surr.mat[surr.tochoose, ], ncol = dim(surr.mat)[2]), 2, sum), target.vec)
+    new.multinom <- multi.prob.func(colMeans(surr.mat[surr.tochoose, , drop = FALSE]), target.vec)
     if (add.prior == "yes") new.multinom <- new.multinom + log(prior.prob.vec[length(unique(surr.tochoose))])
     accept.prob.multinom <- min(c(1, exp(new.multinom - prev.multinom)))
     random.val <- runif(1)
@@ -252,9 +255,8 @@ sourcefind <- function(target.vec, surr.mat, num.pops, surr.exp, num.slots, num.
     }
     if (m == (burn.in + 1 + num.sample * thin.val)) {
       multi.prob.final <- c(multi.prob.final, new.multinom)
-      table.surr <- table(surr.tochoose)
-      surr.tochoose.new <- rep(0, num.surr)
-      surr.tochoose.new[as.integer(names(table.surr))] <- table.surr / num.slots
+      table.surr <- tabulate(surr.tochoose, nbins = num.surr)
+      surr.tochoose.new <- table.surr / num.slots
       surr.tochoose.final <- rbind(surr.tochoose.final, surr.tochoose.new)
       num.sample <- num.sample + 1
     }
@@ -288,9 +290,15 @@ if (length(dim(id.mat)) == 0) {
 
 ## GET RAW COPY PROPS FOR ALL DONORS:
 # probs=read.table(copyvector.file, header=T,check.names=FALSE)
-probs <- as.data.frame(data.table::fread(copyvector.file, header = T))
+probs <- as.data.frame(data.table::fread(copyvector.file, header = TRUE))
 rownames.copyvector <- as.character(probs[, 1])
 colnames.copyvector <- as.character(read.table(copyvector.file, as.is = TRUE, nrows = 1, check.names = FALSE)[-1])
+probs.mat <- as.matrix(probs[, -1, drop = FALSE])
+mode(probs.mat) <- "numeric"
+rownames(probs.mat) <- rownames.copyvector
+colnames(probs.mat) <- colnames.copyvector
+col.lookup <- split(seq_along(colnames.copyvector), colnames.copyvector)
+row.lookup <- split(seq_along(rownames.copyvector), rownames.copyvector)
 for (i in 1:length(donor.pops.all))
 {
   if (!is.element(donor.pops.all[i], as.character(id.mat[, 2])) && !is.element(donor.pops.all[i], colnames.copyvector)) {
@@ -314,50 +322,50 @@ for (i in 1:length(target.pops))
 }
 
 ## combine columns across copy-vector pops:
-predmat.orig <- NULL
-for (i in 1:length(donor.pops.all))
+predmat.orig.list <- vector("list", length(donor.pops.all))
+for (i in seq_along(donor.pops.all))
 {
   id.labels.i <- c(donor.pops.all[i], as.character(id.mat[, 1])[as.character(id.mat[, 2]) == donor.pops.all[i]])
-  match.i <- NULL
-  for (j in 1:length(id.labels.i)) match.i <- c(match.i, which(as.character(colnames.copyvector) == id.labels.i[j]))
+  match.i <- unlist(col.lookup[id.labels.i], use.names = FALSE)
   if (length(match.i) == 0) {
     print(paste("NO INDS OF ", donor.pops.all[i], " FOUND AMONG COLUMNS OF ", copyvector.file, "! Exiting....", sep = ""))
     q(save = "no")
   }
-  predmat.orig <- cbind(predmat.orig, apply(matrix(as.matrix(probs[, 2:dim(probs)[2]][, match.i]), nrow = dim(probs)[1]), 1, sum))
+  predmat.orig.list[[i]] <- rowSums(probs.mat[, match.i, drop = FALSE])
 }
+predmat.orig <- do.call(cbind, predmat.orig.list)
 rownames(predmat.orig) <- rownames.copyvector
 colnames(predmat.orig) <- donor.pops.all
 
 ## combine rows across donor pops:
-predmat <- NULL
-for (i in 1:length(donor.pops.all2))
+predmat.list <- vector("list", length(donor.pops.all2))
+for (i in seq_along(donor.pops.all2))
 {
   id.labels.i <- c(donor.pops.all2[i], as.character(id.mat[, 1])[as.character(id.mat[, 2]) == donor.pops.all2[i]])
-  match.i <- NULL
-  for (j in 1:length(id.labels.i)) match.i <- c(match.i, which(as.character(rownames.copyvector) == id.labels.i[j]))
+  match.i <- unlist(row.lookup[id.labels.i], use.names = FALSE)
   if (length(match.i) == 0) {
     print(paste("NO INDS OF ", donor.pops.all2[i], " FOUND AMONG ROWS OF ", copyvector.file, "! Exiting....", sep = ""))
     q(save = "no")
   }
-  predmat <- rbind(predmat, apply(matrix(as.matrix(predmat.orig[match.i, ]), ncol = dim(predmat.orig)[2]), 2, mean))
+  predmat.list[[i]] <- colMeans(predmat.orig[match.i, , drop = FALSE])
 }
+predmat <- do.call(rbind, predmat.list)
 rownames(predmat) <- donor.pops.all2
 colnames(predmat) <- donor.pops.all
 
 ## GET RAW COPY PROPS FOR RECIPIENT:
-recipient.mat <- NULL
-for (i in 1:length(target.pops))
+recipient.list <- vector("list", length(target.pops))
+for (i in seq_along(target.pops))
 {
   id.labels.i <- c(target.pops[i], as.character(id.mat[, 1])[as.character(id.mat[, 2]) == target.pops[i]])
-  match.i <- NULL
-  for (j in 1:length(id.labels.i)) match.i <- c(match.i, which(as.character(rownames.copyvector) == id.labels.i[j]))
+  match.i <- unlist(row.lookup[id.labels.i], use.names = FALSE)
   if (length(match.i) == 0) {
     print(paste("NO INDS OF ", target.pops[i], " FOUND AMONG ROWS OF ", copyvector.file, "! Exiting....", sep = ""))
     q(save = "no")
   }
-  recipient.mat <- rbind(recipient.mat, apply(matrix(as.matrix(predmat.orig[match.i, ]), ncol = dim(predmat.orig)[2]), 2, mean))
+  recipient.list[[i]] <- colMeans(predmat.orig[match.i, , drop = FALSE])
 }
+recipient.mat <- do.call(rbind, recipient.list)
 rownames(recipient.mat) <- target.pops
 colnames(recipient.mat) <- donor.pops.all
 
@@ -382,7 +390,8 @@ for (i in 1:length(target.pops))
       rownames(surr.mat) <- surr.pops
     }
   }
-  for (j in 1:dim(surr.mat)[1]) surr.mat[j, ] <- surr.mat[j, ] / sum(surr.mat[j, ])
+  row.sums <- rowSums(surr.mat)
+  surr.mat <- sweep(surr.mat, 1, row.sums, "/")
   sourcefind.run <- sourcefind(target.vec, surr.mat, num.pops, surr.exp, num.slots, num.runs, burn.in, thin.val, target.pops[i], surr.pops, save.file.props)
 }
 

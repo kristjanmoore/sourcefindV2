@@ -237,7 +237,8 @@ std::vector<double> tabulate(const std::vector<int> &values, int nbins) {
   return counts;
 }
 
-void write_results(const std::string &save_file, const std::string &target_name,
+void write_results(const std::string &save_file, bool write_header,
+                   const std::string &target_name,
                    const std::vector<double> &multi_prob_final,
                    const std::vector<std::vector<double>> &surr_tochoose_final,
                    const std::vector<std::string> &surr_pops,
@@ -265,11 +266,13 @@ void write_results(const std::string &save_file, const std::string &target_name,
     }
   }
 
-  out << "target\tposterior.prob";
-  for (const auto &pop : surr_pops) {
-    out << '\t' << pop;
+  if (write_header) {
+    out << "target\tposterior.prob";
+    for (const auto &pop : surr_pops) {
+      out << '\t' << pop;
+    }
+    out << '\n';
   }
-  out << '\n';
 
   out << std::setprecision(15);
   for (std::size_t i = 0; i < multi_prob_final.size(); ++i) {
@@ -287,7 +290,8 @@ void sourcefind(const std::vector<double> &target_vec,
                 int burn_in, int thin_val, const std::string &target_name,
                 const std::vector<std::string> &surr_pops,
                 const std::vector<std::string> &surr_mat_row_names,
-                const std::string &save_file, std::mt19937_64 &rng) {
+                const std::string &save_file, bool write_header,
+                std::mt19937_64 &rng) {
   bool add_prior = true;
   int num_surr = static_cast<int>(surr_mat.size());
   if (num_surr == 0) {
@@ -446,7 +450,7 @@ void sourcefind(const std::vector<double> &target_vec,
     }
   }
 
-  write_results(save_file, target_name, multi_prob_final, surr_tochoose_final,
+  write_results(save_file, write_header, target_name, multi_prob_final, surr_tochoose_final,
                 surr_pops, surr_mat_row_names, num_slots);
 }
 
@@ -466,6 +470,7 @@ int main(int argc, char **argv) {
   std::string target_opt;
   std::string output_opt;
   std::string idfile_opt;
+  bool write_header;
 
   while (true) {
     int option_index = 0;
@@ -838,9 +843,11 @@ int main(int argc, char **argv) {
       }
     }
 
+    write_header = i > 0 ? false : true;
+
     sourcefind(target_vec, surr_mat, params.num_pops, params.surr_exp, params.num_slots,
                params.num_runs, params.burn_in, params.thin_val, params.target_popnames[i],
-               surr_pops, row_names, params.save_file, rng);
+               surr_pops, row_names, params.save_file, write_header, rng);
   }
 
   std::cout << "Finished!" << std::endl;
